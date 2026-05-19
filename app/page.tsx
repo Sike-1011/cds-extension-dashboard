@@ -122,10 +122,30 @@ function Dashboard() {
   async function resetAll() {
     if (!confirm("Invalidate ALL active OTPs and sessions? Staff will be locked out immediately.")) return;
     setBusy(true);
-    const { error } = await supabase.rpc("reset_all_sessions");
+    const { data, error } = await supabase.rpc("reset_all_sessions");
     setBusy(false);
-    if (error) alert(error.message);
-    else { setGenerated(null); load(); }
+    if (error) { alert("Reset failed: " + error.message); return; }
+    const count = typeof data === "number" ? data : 0;
+    alert(count > 0
+      ? `✅ Reset complete — ${count} session(s)/OTP(s) wiped. All staff are now logged out.`
+      : "✅ Reset complete — no active sessions or OTPs to remove."
+    );
+    setGenerated(null);
+    load();
+  }
+
+  async function resetUser(email: string) {
+    if (!confirm(`Sign ${nameFromEmail(email)} out of the extension and revoke any unused OTP?`)) return;
+    setBusy(true);
+    const { data, error } = await supabase.rpc("reset_user_session", { p_email: email });
+    setBusy(false);
+    if (error) { alert("Logout failed: " + error.message); return; }
+    const count = typeof data === "number" ? data : 0;
+    alert(count > 0
+      ? `✅ ${nameFromEmail(email)} signed out — ${count} row(s) cleared.`
+      : `✅ ${nameFromEmail(email)} had no active session or OTP to clear.`
+    );
+    load();
   }
 
   const onlineCount = users.filter(u => isOnline(u.email)).length;
@@ -215,15 +235,14 @@ function Dashboard() {
                 <th className="px-4 py-3 text-left">Name</th>
                 <th className="px-4 py-3 text-left">Email</th>
                 <th className="px-4 py-3 text-left">Last ping</th>
-                <th className="px-4 py-3 text-left">Device locked</th>
-                <th className="px-4 py-3 text-left">Active</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
               {users.map(u => {
-                const lp     = lastPingFor(u.email);
-                const online = isOnline(u.email);
-                const sess   = sessions.find(s => s.email.toLowerCase() === u.email.toLowerCase());
+                const lp        = lastPingFor(u.email);
+                const online    = isOnline(u.email);
+                const hasSess   = sessions.some(s => s.email.toLowerCase() === u.email.toLowerCase());
                 return (
                   <tr key={u.id} className="hover:bg-slate-800/40 transition-colors">
                     <td className="px-4 py-3">
@@ -241,22 +260,27 @@ function Dashboard() {
                     <td className="px-4 py-3 text-slate-400">
                       {lp ? lp.toLocaleString() : <span className="text-slate-600">—</span>}
                     </td>
-                    <td className="px-4 py-3">
-                      {sess?.device_id
-                        ? <span className="text-emerald-400 font-medium">Yes</span>
-                        : <span className="text-slate-600">—</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      {u.is_active
-                        ? <span className="text-emerald-400 font-medium">Yes</span>
-                        : <span className="text-red-400">No</span>}
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => resetUser(u.email)}
+                        disabled={busy || !hasSess}
+                        title={hasSess
+                          ? `Sign ${nameFromEmail(u.email)} out and revoke any unused OTP`
+                          : "No active session or OTP to revoke"}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors
+                          bg-red-600/15 border-red-700/40 text-red-300
+                          hover:bg-red-600/30 hover:text-white hover:border-red-500
+                          disabled:bg-slate-800/40 disabled:border-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed"
+                      >
+                        Sign out
+                      </button>
                     </td>
                   </tr>
                 );
               })}
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500 text-sm">
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500 text-sm">
                     No authorized users found. Run the SQL seed script first.
                   </td>
                 </tr>
